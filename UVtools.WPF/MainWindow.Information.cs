@@ -366,10 +366,10 @@ public partial class MainWindow
             if (SlicerFile.CanUseLayerRetractHeight2)
                 CurrentLayerProperties.Add(new ValueDescription($"{layer.RetractHeight2.ToString(CultureInfo.InvariantCulture)}mm @ {layer.RetractSpeed2}mm/min", nameof(layer.RetractHeight2)));
 
-            if (SlicerFile.CanUseLayerLightOffDelay)
+            if (SlicerFile.CanUseLayerLightOffDelay || SlicerFile.CanUseAnyLightOffDelay)
                 CurrentLayerProperties.Add(new ValueDescription($"{layer.LightOffDelay}s", nameof(layer.LightOffDelay)));
 
-            if (SlicerFile.CanUseLayerWaitTimeBeforeCure)
+            if (SlicerFile.CanUseLayerWaitTimeBeforeCure || SlicerFile.CanUseAnyWaitTimeBeforeCure)
                 CurrentLayerProperties.Add(new ValueDescription($"{layer.WaitTimeBeforeCure}/{layer.WaitTimeAfterCure}/{layer.WaitTimeAfterLift}s", "WaitTimes:"));
 
             if (SlicerFile.CanUseLayerLightPWM)
