@@ -33,7 +33,7 @@ public class ScriptDebandingZSample : ScriptGlobals
         Minimum = 0.1m,
         Maximum = 50,
         Increment = 0.5m,
-        Value = 0.5m,
+        Value = 1.0m,
         DecimalPlates = 2,
     };
 
@@ -45,8 +45,19 @@ public class ScriptDebandingZSample : ScriptGlobals
         Minimum = 5,
         Maximum = 300,
         Increment = 1,
-        Value = 40,
+        Value = 60,
         DecimalPlates = 2,
+    };
+
+    readonly ScriptNumericalInput<ushort> DebandingHeightTransitionLayersInput = new()
+    {
+        Label = "Number of layers to transition to normal wait time",
+        ToolTip = "Allows a transition from large debanding wait time to normal wait time",
+        Unit = "layers",
+        Minimum = 0,
+        Maximum = 100,
+        Increment = 1,
+        Value = 20,
     };
 
     readonly ScriptNumericalInput<decimal> NormalWaitTimeBeforeCureInput = new()
@@ -85,6 +96,29 @@ public class ScriptDebandingZSample : ScriptGlobals
         DecimalPlates = 2,
     };
 
+    readonly ScriptNumericalInput<decimal> HeightOffsetInput = new()
+    {
+        Label = "Height offset for the print",
+        ToolTip = "Replaces the 'Z Offset' function",
+        Unit = "mm",
+        Minimum = 0.0m,
+        Maximum = 10,
+        Increment = 0.05m,
+        Value = 0.1m,
+        DecimalPlates = 2,
+    };
+
+    readonly ScriptNumericalInput<ushort> RepeatBottomLayerInput = new()
+    {
+        Label = "Repeat bottom layer N times",
+        ToolTip = "Repeat the bottom layer N times, does not increase number of times bottom layer exposures",
+        Unit = "layers",
+        Minimum = 0,
+        Maximum = ushort.MaxValue,
+        Increment = 1,
+        Value = 20
+    };
+
     /// <summary>
     /// Set configurations here, this function trigger just after load a script
     /// </summary>
@@ -98,10 +132,13 @@ public class ScriptDebandingZSample : ScriptGlobals
         if (SlicerFile.SupportsGCode) CreateEmptyLayerInput.Value = false;
         Script.UserInputs.Add(CreateEmptyLayerInput);
         Script.UserInputs.Add(BottomSafeDebandingHeightInput);
+        Script.UserInputs.Add(DebandingHeightTransitionLayersInput);
         Script.UserInputs.Add(BottomWaitTimeBeforeCureInput);
         Script.UserInputs.Add(NormalWaitTimeBeforeCureInput);
         if(SlicerFile.CanUseBottomWaitTimeAfterCure) Script.UserInputs.Add(BottomWaitTimeAfterCureInput);
         if(SlicerFile.CanUseWaitTimeAfterCure) Script.UserInputs.Add(NormalWaitTimeAfterCureInput);
+        Script.UserInputs.Add(HeightOffsetInput);
+        Script.UserInputs.Add(RepeatBottomLayerInput);
     }
 
     /// <summary>
@@ -137,10 +174,32 @@ public class ScriptDebandingZSample : ScriptGlobals
         if (SlicerFile.CanUseBottomWaitTimeAfterCure) SlicerFile.BottomWaitTimeAfterCure = (float) BottomWaitTimeAfterCureInput.Value;
         if (SlicerFile.CanUseWaitTimeAfterCure) SlicerFile.WaitTimeAfterCure = (float)NormalWaitTimeAfterCureInput.Value;
 
+        if (RepeatBottomLayerInput.Value > 0)
+        {
+            var repeatLayer_ = SlicerFile.FirstLayer;
+            for (int i = 0; i < (int)RepeatBottomLayerInput.Value; i++)
+            {
+                var repeatLayer = repeatLayer_.Clone();
+                SlicerFile.Prepend(repeatLayer);
+            }
+        }
+
+
+        decimal transition_distance = (decimal) ((float) DebandingHeightTransitionLayersInput.Value * SlicerFile.LayerHeight);
+        float decrement = Math.Max(((float)BottomWaitTimeBeforeCureInput.Value - (float)NormalWaitTimeBeforeCureInput.Value) / ( (float)DebandingHeightTransitionLayersInput.Value + 1), 0f);
+        float current_transition = (float)BottomWaitTimeBeforeCureInput.Value;
         foreach (var layer in SlicerFile)
         {
-            if((decimal)layer.PositionZ > BottomSafeDebandingHeightInput.Value) break;
-            layer.SetWaitTimeBeforeCureOrLightOffDelay((float) BottomWaitTimeBeforeCureInput.Value);
+            if((decimal)layer.PositionZ > BottomSafeDebandingHeightInput.Value)
+            {
+                if ((decimal)layer.PositionZ > BottomSafeDebandingHeightInput.Value + transition_distance ) break;
+                current_transition -= decrement;
+                layer.SetWaitTimeBeforeCureOrLightOffDelay(current_transition);
+            }
+            else
+            {
+                layer.SetWaitTimeBeforeCureOrLightOffDelay((float) BottomWaitTimeBeforeCureInput.Value);
+            }
         }
 
         if (CreateEmptyLayerInput.Value)
@@ -161,6 +220,11 @@ public class ScriptDebandingZSample : ScriptGlobals
                     SlicerFile.SuppressRebuildPropertiesWork(() => { SlicerFile.Prepend(firstLayer); });
                 }
             }
+        }
+
+        foreach (var layer in SlicerFile)
+        {
+            layer.PositionZ += (float)HeightOffsetInput.Value;
         }
 
         // return true if not cancelled by user
